@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.16)
+cmake_minimum_required(VERSION 3.21)
 project(aruco_pose_estimation LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
@@ -27,6 +27,8 @@ add_library(aruco_pose STATIC
 target_include_directories(aruco_pose PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_include_directories(aruco_pose SYSTEM PUBLIC ${OpenCV_INCLUDE_DIRS})
 target_link_libraries(aruco_pose PUBLIC ${OpenCV_LIBS})
+# The headers use std::optional (C++17), so every user of the library needs C++17 too.
+target_compile_features(aruco_pose PUBLIC cxx_std_17)
 
 if(MSVC)
     target_compile_options(aruco_pose PUBLIC /W4 /permissive-)
@@ -39,3 +41,14 @@ target_link_libraries(calibrate_camera PRIVATE aruco_pose)
 
 add_executable(pose_app apps/pose_app.cpp)
 target_link_libraries(pose_app PRIVATE aruco_pose)
+
+# Windows looks for DLLs next to the .exe first. Copying the OpenCV DLLs there after
+# each build means the apps run without adding the OpenCV bin folder to PATH.
+if(WIN32)
+    foreach(app calibrate_camera pose_app)
+        add_custom_command(TARGET ${app} POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                    $<TARGET_RUNTIME_DLLS:${app}> $<TARGET_FILE_DIR:${app}>
+            COMMAND_EXPAND_LISTS)
+    endforeach()
+endif()

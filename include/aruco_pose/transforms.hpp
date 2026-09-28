@@ -17,7 +17,9 @@ cv::Matx44d relativeTransform(const cv::Matx44d& T_cam_a, const cv::Matx44d& T_c
 
 cv::Vec3d translationOf(const cv::Matx44d& T);
 
-// Roll, pitch, yaw in degrees, for display only.
+// Roll, pitch, yaw in degrees, for display only. (0, 0, 0) = marker squarely facing the
+// camera, upright. Roll = tilt about camera x (top toward/away), pitch = turn about
+// camera y (left/right), yaw = spin in the image plane.
 cv::Vec3d rotationToEulerDeg(const cv::Vec3d& rvec);
 
 }  // namespace aruco_pose

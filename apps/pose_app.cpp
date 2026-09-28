@@ -23,9 +23,12 @@ int main(int argc, char** argv) {
     try {
         const aruco_pose::AppConfig config = aruco_pose::loadConfig(configPath);
 
-        // TODO (Phase 4): load intrinsics (loadIntrinsics) and pass them in here.
-        // TODO: build MarkerDetector, PoseEstimator, PoseFilter.
-        aruco_pose::Visualizer visualizer(aruco_pose::CameraIntrinsics{}, config.markerLengthM / 2);
+        const aruco_pose::CameraIntrinsics intrinsics = aruco_pose::loadIntrinsics(config.intrinsicsFile);
+
+        // TODO (Phase 6): build PoseFilter.
+        const aruco_pose::MarkerDetector detector;  // DICT_6X6_250 by default
+        const aruco_pose::PoseEstimator estimator(intrinsics, config.markerLengthM);
+        const aruco_pose::Visualizer visualizer(intrinsics, config.markerLengthM / 2);
         aruco_pose::FpsCounter fps;
 
         cv::VideoCapture cap(config.cameraIndex, cv::CAP_DSHOW);
@@ -51,12 +54,33 @@ int main(int argc, char** argv) {
                 break;
             }
 
-            // TODO: pipeline, one step at a time:
-            // 1. detections = detector.detect(frame)
-            // 2. for each detection: pose = estimator.estimate(detection)
-            // 3. (Phase 6) pose = filter.update(pose)
-            // 4. draw detections, axes, pose text
-            // 5. (Phase 5) if two markers are visible, show their relative distance
+            // fx, fy, cx, cy are in pixels at the calibration resolution. At any other
+            // resolution every distance would be wrong, so refuse instead of lying.
+            if (frame.size() != intrinsics.imageSize) {
+                std::cerr << "Error: camera gives " << frame.cols << "x" << frame.rows
+                          << " but intrinsics were calibrated at " << intrinsics.imageSize.width << "x"
+                          << intrinsics.imageSize.height << ". Recalibrate or fix frame_width/height.\n";
+                return 1;
+            }
+
+            const std::vector<aruco_pose::MarkerDetection> detections = detector.detect(frame);
+
+            std::vector<aruco_pose::MarkerPose> poses;
+            for (const aruco_pose::MarkerDetection& detection : detections) {
+                if (const auto pose = estimator.estimate(detection)) {
+                    poses.push_back(*pose);
+                }
+            }
+            // TODO (Phase 6): pose = filter.update(pose)
+            // TODO (Phase 5): if two markers are visible, show their relative distance
+
+            // Draw after detecting, so the overlay never confuses the detector.
+            visualizer.drawDetections(frame, detections);
+            for (size_t i = 0; i < poses.size(); ++i) {
+                visualizer.drawAxes(frame, poses[i]);
+                // Stack one text block per marker down the left side, below the FPS.
+                visualizer.drawPoseText(frame, poses[i], cv::Point(10, 65 + static_cast<int>(i) * 55));
+            }
 
             fps.tick();
             visualizer.drawFps(frame, fps.fps());

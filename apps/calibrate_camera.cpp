@@ -6,9 +6,9 @@
 #include "aruco_pose/calibration.hpp"
 #include "aruco_pose/config.hpp"
 
-#include <opencv2/calib3d.hpp>
 #include <opencv2/highgui.hpp>
 #include <opencv2/imgproc.hpp>
+#include <opencv2/objdetect.hpp>  // OpenCV 5: drawChessboardCorners lives here
 #include <opencv2/videoio.hpp>
 #include <exception>
 #include <iostream>
@@ -19,8 +19,8 @@ int main(int argc, char** argv) {
 
     try {
         const aruco_pose::AppConfig config = aruco_pose::loadConfig(configPath);
-        // TODO (Phase 2): create a Calibrator with
-        //       cv::Size(config.boardCols, config.boardRows) and config.squareSizeM.
+        const cv::Size patternSize(config.boardCols, config.boardRows);
+        aruco_pose::Calibrator calibrator(patternSize, config.squareSizeM);
 
         cv::VideoCapture cap(config.cameraIndex, cv::CAP_DSHOW);
         if (!cap.isOpened()) {
@@ -35,7 +35,9 @@ int main(int argc, char** argv) {
                   << ", got " << cap.get(cv::CAP_PROP_FRAME_WIDTH) << "x"
                   << cap.get(cv::CAP_PROP_FRAME_HEIGHT) << "\n";
 
-        std::cout << "SPACE = capture, c = calibrate, q/ESC = quit\n";
+        std::cout << "Board: " << patternSize.width << "x" << patternSize.height
+                  << " inner corners, square " << config.squareSizeM * 1000 << " mm\n"
+                  << "SPACE = capture, c = calibrate, q/ESC = quit\n";
 
         cv::Mat frame;
         while (true) {
@@ -44,21 +46,39 @@ int main(int argc, char** argv) {
                 break;
             }
 
-            // TODO: show how many views are captured (cv::putText).
+            // Draw on a copy so the frame passed to addFrame stays clean.
+            cv::Mat display = frame.clone();
+            cv::putText(display, "Views: " + std::to_string(calibrator.numFrames()), cv::Point(10, 30),
+                        cv::FONT_HERSHEY_SIMPLEX, 0.8, cv::Scalar(0, 255, 0), 2);
+            cv::imshow("Calibration", display);
 
-            cv::imshow("Calibration", frame);
             const int key = cv::waitKey(1);
-
             if (key == 'q' || key == 27) {
                 break;
             }
             if (key == ' ') {
-                // TODO: calibrator.addFrame(frame). Print whether the board was found.
-                // Tip: draw the found corners (cv::drawChessboardCorners) so you can
-                // see bad detections. Draw on a copy, not the frame you pass in.
+                if (calibrator.addFrame(frame)) {
+                    std::cout << "View " << calibrator.numFrames() << " captured.\n";
+                    // Show the corners that were stored, so bad detections are easy to spot.
+                    cv::Mat captured = frame.clone();
+                    cv::drawChessboardCorners(captured, patternSize, calibrator.lastCorners(), true);
+                    cv::imshow("Last capture", captured);
+                } else {
+                    std::cout << "Board not found. Make sure the whole board is visible and in focus.\n";
+                }
             }
             if (key == 'c') {
-                // TODO: rms = calibrator.calibrate(), print it, then saveIntrinsics.
+                std::cout << "Calibrating with " << calibrator.numFrames() << " views...\n";
+                const double rms = calibrator.calibrate();
+                const aruco_pose::CameraIntrinsics& in = calibrator.intrinsics();
+
+                std::cout << "RMS reprojection error: " << rms << " px"
+                          << (rms < 0.5 ? " (great)" : rms < 1.0 ? " (ok)" : " (poor, recapture)") << "\n"
+                          << "Camera matrix:\n" << in.cameraMatrix << "\n"
+                          << "Distortion (k1 k2 p1 p2 k3): " << in.distCoeffs << "\n";
+
+                aruco_pose::saveIntrinsics(config.intrinsicsFile, in, rms);
+                std::cout << "Saved to " << config.intrinsicsFile << "\n";
             }
         }
     } catch (const std::exception& e) {

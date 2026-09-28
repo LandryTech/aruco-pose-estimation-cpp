@@ -6,21 +6,34 @@ namespace aruco_pose {
 
 PoseEstimator::PoseEstimator(const CameraIntrinsics& intrinsics, double markerLengthM)
     : intrinsics_(intrinsics), markerLengthM_(markerLengthM) {
-    // TODO: fill markerPoints_ with the 4 marker corners in the marker's frame.
-    // Center at the origin, z = 0, half-length = markerLengthM_ / 2.
-    // Order MUST match the detector: top-left, top-right, bottom-right, bottom-left.
-    // Think about which way +x and +y point in the marker frame.
+    // The marker's own frame: origin at its center, x right, y up, z out of the paper
+    // (toward the camera when it faces you). These 4 points are the corners in that frame,
+    // in the detector's order (TL, TR, BR, BL). SOLVEPNP_IPPE_SQUARE requires exactly this layout.
+    const float h = static_cast<float>(markerLengthM_ / 2.0);
+    markerPoints_ = {
+        {-h,  h, 0.f},  // top-left
+        { h,  h, 0.f},  // top-right
+        { h, -h, 0.f},  // bottom-right
+        {-h, -h, 0.f},  // bottom-left
+    };
 }
 
 std::optional<MarkerPose> PoseEstimator::estimate(const MarkerDetection& detection) const {
-    // TODO:
-    // 1. Call cv::solvePnP with markerPoints_, detection.corners,
-    //    the camera matrix, and dist coeffs.
-    //    Use the flag cv::SOLVEPNP_IPPE_SQUARE (read why it fits square markers).
-    // 2. If it returns false, return std::nullopt.
-    // 3. Otherwise return a MarkerPose with the id, rvec, and tvec.
-    (void)detection;
-    return std::nullopt;
+    // PnP ("Perspective-n-Point"): given known 3D points and where they show up in the image,
+    // find the rotation and translation that best line them up through the camera model.
+    // IPPE_SQUARE is a closed-form solver made for exactly 4 points on a square, so it is
+    // fast and doesn't need a starting guess like the general iterative solver does.
+    MarkerPose pose;
+    pose.id = detection.id;
+    const bool ok = cv::solvePnP(markerPoints_, detection.corners, intrinsics_.cameraMatrix,
+                                 intrinsics_.distCoeffs, pose.rvec, pose.tvec, false,
+                                 cv::SOLVEPNP_IPPE_SQUARE);
+
+    // A marker behind the camera (z <= 0) is physically impossible, so treat it as a failure.
+    if (!ok || pose.tvec[2] <= 0.0) {
+        return std::nullopt;
+    }
+    return pose;
 }
 
 const CameraIntrinsics& PoseEstimator::intrinsics() const {
