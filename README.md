@@ -130,6 +130,15 @@ config/app.yaml       Camera, board, and marker settings
 docs/media/           Demo GIFs and photos
 ```
 
+## Contributions and AI use
+
+This project was built with help from Claude Opus 5.5 (Anthropic), used as a coding assistant through Claude Code, under my direction and supervision.
+
+- **Me (Kaden Landry):** project goals, scope, and phase plan. Hardware setup, printing and measuring targets, and camera calibration. All physical testing, measurements, and findings. Photos and GIFs. Reviewing, changing, and approving every change before it was committed.
+- **Claude Opus 5.5:** wrote most of the C++ implementation and the CMake build under my review. Ran offline checks against synthetic images with known answers. Helped analyze my test data and draft this README from my notes.
+
+I reviewed the code and made sure I understand how every part works, from calibration to `solvePnP`. The testing, results, and conclusions are my own work.
+
 ## License
 
 MIT. See [LICENSE](LICENSE).
